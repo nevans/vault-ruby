@@ -5,7 +5,8 @@ require "cgi"
 require "json"
 require "uri"
 
-require_relative "persistent"
+require "net/http/persistent"
+
 require_relative "configurable"
 require_relative "errors"
 require_relative "version"
@@ -50,6 +51,14 @@ module Vault
       a << Errno::ECONNREFUSED
       a << Errno::EADDRNOTAVAIL
 
+      # Broken connection errors
+      a << Errno::ECONNRESET
+      a << Errno::ECONNABORTED
+      a << Errno::EPIPE
+      a << Errno::ETIMEDOUT
+      a << OpenSSL::SSL::SSLError
+      a << IOError
+
       # Failed to read body or no response body given
       a << EOFError
 
@@ -61,7 +70,7 @@ module Vault
       a << Net::ReadTimeout if defined?(Net::ReadTimeout)
       a << Net::OpenTimeout if defined?(Net::OpenTimeout)
 
-      a << PersistentHTTP::Error
+      a << Net::HTTP::Persistent::Error
     end.freeze
 
     # Vault requires at least TLS1.2
@@ -92,7 +101,8 @@ module Vault
       @lock.synchronize do
         return @nhp if @nhp
 
-        @nhp = PersistentHTTP.new("vault-ruby", nil, pool_size, pool_timeout)
+        @nhp = Net::HTTP::Persistent.new(name: "vault-ruby", pool_size:)
+        @nhp.pool.instance_variable_set(:@timeout, pool_timeout)
 
         if proxy_address
           proxy_uri = URI.parse "http://#{proxy_address}"
